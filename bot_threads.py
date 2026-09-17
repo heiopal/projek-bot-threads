@@ -1,13 +1,16 @@
 import os
-
 import requests
+from dotenv import load_dotenv
 from google import genai
 
-# 1. Kredensial API
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-THREADS_ACCESS_TOKEN = os.environ["THREADS_ACCESS_TOKEN"]
+# 1. Muat variabel dari file .env
+load_dotenv()
 
-# 2. Inisialisasi Client Gemini
+# 2. Ambil kredensial dari Environment Variables
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+THREADS_ACCESS_TOKEN = os.getenv("THREADS_ACCESS_TOKEN")
+
+# 3. Inisialisasi Client Gemini
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 def generate_content_with_gemini():
@@ -22,9 +25,9 @@ def generate_content_with_gemini():
         "- Berikan LANGSUNG teks postingannya tanpa tanda kutip atau penjelasan tambahan."
     )
     
-    print("Gemini sedang membuat konten...")
+    print("🤖 Gemini sedang membuat konten...")
     response = client.models.generate_content(
-        model="gemini-3.6-flash",
+        model="gemini-3.6-flash",  
         contents=prompt
     )
     
@@ -34,7 +37,6 @@ def generate_content_with_gemini():
 
 def post_to_threads(text_content):
     """Mengirimkan teks konten ke Threads API."""
-    # Tahap A: Buat Container
     create_url = "https://graph.threads.net/v1.0/me/threads"
     payload = {
         "media_type": "TEXT",
@@ -49,7 +51,6 @@ def post_to_threads(text_content):
 
     creation_id = res["id"]
 
-    # Tahap B: Publish
     publish_url = "https://graph.threads.net/v1.0/me/threads_publish"
     pub_payload = {
         "creation_id": creation_id,
@@ -63,9 +64,7 @@ def post_to_threads(text_content):
         print("❌ Gagal menerbitkan ke Threads:", pub_res)
 
 if __name__ == "__main__":
-    # 1. Generate konten otomatis dari Gemini
     konten_ai = generate_content_with_gemini()
     
-    # 2. Kirim postingan ke Threads
     if konten_ai:
         post_to_threads(konten_ai)

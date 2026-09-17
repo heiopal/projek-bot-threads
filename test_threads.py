@@ -1,11 +1,15 @@
 import os
-
 import requests
+from dotenv import load_dotenv
 
-ACCESS_TOKEN = os.environ["THREADS_ACCESS_TOKEN"]
+# 1. Muat variabel dari file .env
+load_dotenv()
+
+# 2. Ambil Access Token dari file .env
+ACCESS_TOKEN = os.getenv("THREADS_ACCESS_TOKEN")
 
 def post_to_threads(text_content):
-    
+    # Tahap 1: Buat Container Postingan
     create_url = "https://graph.threads.net/v1.0/me/threads"
     payload = {
         "media_type": "TEXT",
@@ -39,5 +43,5 @@ def post_to_threads(text_content):
         print("❌ Gagal menerbitkan postingan:", pub_data)
 
 if __name__ == "__main__":
-    pesan_tes = "Halo Threads! Ini postingan uji coba otomatis via Python script"
+    pesan_tes = "Halo Threads! Ini postingan uji coba otomatis via Python script 🚀"
     post_to_threads(pesan_tes)

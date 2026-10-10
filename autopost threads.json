@@ -1,0 +1,337 @@
+{
+  "name": "autopost threads",
+  "nodes": [
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-3.8-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-3.8-flash"
+        },
+        "text": "==Kamu adalah asisten pembuat konten sosial media (Threads) seputar IT, teknologi, dan programming. \n\nTugasmu adalah menganalisis gambar terlampir dengan FOKUS SPESIFIK pada arahan atau topik berikut ini:\n\"{{ $json.message?.caption || $json.channel_post?.caption || 'Analisis kegunaan atau keunikan dari hal yang ada di gambar ini secara umum.' }}\"\n\nAturan penulisan:\n1. Buat reaksi yang antusias dan takjub (seperti: \"Gila sih ini ngebantu banget\", \"Kok bisa kepikiran ya\", \"Kalian anak IT udah pada tau belum\", dll).\n2. Berikan teks hasilnya secara langsung tanpa basa-basi.\n3. Maksimal output <450 karakter.\n",
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        528,
+        32
+      ],
+      "id": "a7e561c2-6ae1-4e7e-bd72-0902f45d61e2",
+      "name": "Analyze image",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "RpbucNxX6YY2YXr0",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.threads.net/28729320776759112/threads",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $json.access_token || 'THAAhXEXy6G9ZABYllJbGdzUHpZAM0JfQU5KSDA1Y2h5el9WaHlOelNId25wZAmQ3cEViN1JpN2RNSzM3VFdxQXRVcW9NVk1kWjNFYVRMS2oyd3BqVE1WY1lRNEJ2TWlYM3huUzdZANTNORlphb1ZAtWjkxMkxLcExVQzNialVXbkZAnSHp4eC1WT25lWjVsTnpOMEkZD' }}"
+            },
+            {
+              "name": "media_type",
+              "value": "IMAGE"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Merge').item.json.shortText }}"
+            },
+            {
+              "name": "image_url",
+              "value": "={{ $('Merge').item.json.url }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1552,
+        -96
+      ],
+      "id": "e3e6fa79-6ca1-4cbd-b7d7-b52990c638e9",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "seconds"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1744,
+        -96
+      ],
+      "id": "be4c6905-ec89-43b0-a9a9-7624404c4eb0",
+      "name": "Wait (Processing Image)",
+      "webhookId": "a471dc84-2be6-4bfe-86ca-c0de9fec0a35"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.threads.net/v1.0/28729320776759112/threads_publish",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('HTTP Request').item.json.access_token || 'TTHAAhXEXy6G9ZABYllJbGdzUHpZAM0JfQU5KSDA1Y2h5el9WaHlOelNId25wZAmQ3cEViN1JpN2RNSzM3VFdxQXRVcW9NVk1kWjNFYVRMS2oyd3BqVE1WY1lRNEJ2TWlYM3huUzdZANTNORlphb1ZAtWjkxMkxLcExVQzNialVXbkZAnSHp4eC1WT25lWjVsTnpOMEkZD' }}"
+            },
+            {
+              "name": "creation_id",
+              "value": "={{ $('HTTP Request1').item.json.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1936,
+        -96
+      ],
+      "id": "791187f6-da81-48f0-afa8-9409417f931c",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "jsCode": "/****************************************************************\n *  cleanCaption  – ambil teks Gemini & rapikan\n *  ------------------------------------------------------------\n *  Input  : output node \"Analyze image\"\n *  Output : { shortText }  (string ≤500 karakter, emoji OK)\n ****************************************************************/\n\n// 1.  ambil teks dari Gemini  content.parts[0].text\nlet raw = '';\ntry {\n\traw = $json.content.parts[0].text;\n} catch {\n\traw = JSON.stringify($json);           // fallback\n}\n\n// 2.  hapus karakter tak terlihat & newline berlebih\nlet clean = raw\n\t.replace(/[\\u0000-\\u001F\\u007F]/g, ' ')   // control chars\n\t.replace(/\\s+\\n/g, '\\n')                  // trim spasi sebelum \\n\n\t.replace(/\\n{2,}/g, '\\n')                 // max 1 newline\n\t.trim();\n\n// 3.  potong ke 500 char (limit Threads)\nif (clean.length > 500) clean = clean.slice(0, 497) + '…';\n\n// 4.  keluar‑kan\nreturn { shortText: clean };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        32
+      ],
+      "id": "ed6e8179-e86a-4305-aa49-9d7ede86c8ef",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1088,
+        -96
+      ],
+      "id": "73e547ee-7353-4ea6-8e43-54961b9fc0e6",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://upload.imagekit.io/api/v1/files/upload",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "fileName",
+              "value": "gambar.jpg"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        864,
+        -176
+      ],
+      "id": "6f288a90-0e10-4cbd-9c93-f07cdfb3c8c0",
+      "name": "HTTP Request4",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "HYzCBpCQH2jcmwSI",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.threads.net/refresh_access_token?grant_type=th_refresh_token&access_token=THAAhXEXy6G9ZABYllJbGdzUHpZAM0JfQU5KSDA1Y2h5el9WaHlOelNId25wZAmQ3cEViN1JpN2RNSzM3VFdxQXRVcW9NVk1kWjNFYVRMS2oyd3BqVE1WY1lRNEJ2TWlYM3huUzdZANTNORlphb1ZAtWjkxMkxLcExVQzNialVXbkZAnSHp4eC1WT25lWjVsTnpOMEkZD",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1296,
+        -96
+      ],
+      "id": "4e36acb6-09c0-4977-a4f3-3c88a2e9ec9a",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "updates": [
+          "channel_post",
+          "message"
+        ],
+        "additionalFields": {
+          "download": true
+        }
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        176,
+        -48
+      ],
+      "id": "41ae95e7-1675-45dd-b7c8-acee2c62ba6d",
+      "name": "Telegram Trigger",
+      "webhookId": "249389a9-f56c-4c08-8198-08dcc50004f2",
+      "credentials": {
+        "telegramApi": {
+          "id": "ZRBRBZVQCUFWTP7f",
+          "name": "bot telegram"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Analyze image": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Wait (Processing Image)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait (Processing Image)": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request4": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Analyze image",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP Request4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "891782c5-d99f-4471-9d76-cd1e49a086c8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f32b42493093beced5cf3944d41479cd056b746ef92fa906b5ab7535d001d7b6"
+  },
+  "nodeGroups": [],
+  "id": "WrDqtKCizYQiBNtZ",
+  "tags": []
+}

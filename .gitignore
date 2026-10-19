@@ -1,3 +1,6 @@
 .env
+replied_comments.json
+commented_posts.json
 __pycache__/
 *.pyc
+*.log

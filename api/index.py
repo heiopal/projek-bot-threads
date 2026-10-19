@@ -491,6 +491,8 @@ def handle_callback_query(cq):
 # FLASK WEBHOOK ROUTES & HEALTH DASHBOARD
 # =============================================================================
 @app.route("/", methods=["GET"])
+@app.route("/api", methods=["GET"])
+@app.route("/api/index", methods=["GET"])
 def home():
     uptime = str(datetime.now() - START_TIME).split(".")[0]
     history, _ = fetch_history()
@@ -546,6 +548,7 @@ def home():
     return html
 
 @app.route("/set-webhook", methods=["GET", "POST"])
+@app.route("/api/set-webhook", methods=["GET", "POST"])
 def set_webhook():
     host_url = request.host_url.rstrip("/")
     webhook_url = f"{host_url}/api/webhook"

@@ -490,10 +490,7 @@ def handle_callback_query(cq):
 # =============================================================================
 # FLASK WEBHOOK ROUTES & HEALTH DASHBOARD
 # =============================================================================
-@app.route("/", methods=["GET"])
-@app.route("/api", methods=["GET"])
-@app.route("/api/index", methods=["GET"])
-def home():
+def render_dashboard():
     uptime = str(datetime.now() - START_TIME).split(".")[0]
     history, _ = fetch_history()
     history_items_html = ""
@@ -547,9 +544,7 @@ def home():
     """
     return html
 
-@app.route("/set-webhook", methods=["GET", "POST"])
-@app.route("/api/set-webhook", methods=["GET", "POST"])
-def set_webhook():
+def execute_set_webhook():
     host_url = request.host_url.rstrip("/")
     webhook_url = f"{host_url}/api/webhook"
     tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={webhook_url}"
@@ -568,9 +563,7 @@ def set_webhook():
             "target_webhook": webhook_url
         }), 500
 
-@app.route("/api/webhook", methods=["POST"])
-@app.route("/webhook", methods=["POST"])
-def webhook():
+def process_webhook():
     try:
         update = request.get_json(force=True, silent=True) or {}
         log.info(f"Incoming Telegram Webhook Update: {list(update.keys())}")
@@ -602,7 +595,22 @@ def webhook():
         log.error(f"Error handling webhook update: {e}", exc_info=True)
         return jsonify({"ok": False, "error": str(e)}), 200
 
-# Local test runner
+# Universal handler for all paths and HTTP methods
+@app.route("/", defaults={"path": ""}, methods=["GET", "POST", "HEAD", "OPTIONS"])
+@app.route("/<path:path>", methods=["GET", "POST", "HEAD", "OPTIONS"])
+def master_router(path=""):
+    # If POST -> Process Telegram update
+    if request.method == "POST":
+        return process_webhook()
+
+    # If GET with 'set-webhook'
+    req_path = request.path.lower()
+    if "set-webhook" in req_path or "set-webhook" in path.lower():
+        return execute_set_webhook()
+
+    # Default GET -> Render dashboard
+    return render_dashboard()
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)

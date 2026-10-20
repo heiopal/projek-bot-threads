@@ -214,15 +214,54 @@ def call_gemini(system_instruction, user_prompt):
         log.error(f"Gemini call error: {e}")
     return None
 
+def is_deepseek_peak_hour():
+    """
+    Check if current UTC time falls into DeepSeek's Peak Hours (Mon-Fri):
+    - Sesi 1: 01:00 - 04:00 UTC (08:00 - 11:00 WIB)
+    - Sesi 2: 06:00 - 10:00 UTC (13:00 - 17:00 WIB)
+    Returns: (is_peak: bool, status_desc: str)
+    """
+    now_utc = datetime.utcnow()
+    # 5 = Saturday, 6 = Sunday (Weekend full off-peak)
+    if now_utc.weekday() >= 5:
+        return False, "Weekend (Off-Peak Diskon 50% • DeepSeek Prioritas)"
+    
+    hour = now_utc.hour + now_utc.minute / 60.0
+    # Sesi 1: 01:00 - 04:00 UTC
+    if 1.0 <= hour < 4.0:
+        return True, "Peak Hour Pagi (08:00-11:00 WIB • Proteksi Kuota via Gemini Free)"
+    # Sesi 2: 06:00 - 10:00 UTC
+    if 6.0 <= hour < 10.0:
+        return True, "Peak Hour Sore (13:00-17:00 WIB • Proteksi Kuota via Gemini Free)"
+    return False, "Off-Peak (Diskon 50% • DeepSeek Prioritas)"
+
 def call_ai(system_instruction, user_prompt):
-    """Unified AI caller: Tries DeepSeek first; falls back to Gemini if failed or unconfigured."""
-    if DEEPSEEK_API_KEY:
-        log.info("Generating content using DeepSeek (deepseek-chat)...")
-        res = call_deepseek(system_instruction, user_prompt)
+    """
+    Smart Cost-Aware Model Routing:
+    - Peak Hour (Mon-Fri 08:00-11:00 & 13:00-17:00 WIB):
+      Routes to FREE Gemini 3.6 Flash (protects DeepSeek balance from 2x rate).
+      Fallback: DeepSeek-V3 if Gemini fails.
+    - Off-Peak (Malam, Pagi hari, Istirahat Siang, Weekend):
+      Routes to DeepSeek-V3 (50% cheaper token rate).
+      Fallback: Gemini 3.6 Flash if DeepSeek fails.
+    """
+    is_peak, peak_status = is_deepseek_peak_hour()
+
+    if is_peak:
+        log.info(f"⏰ Peak Hour ({peak_status}): Prioritizing FREE Gemini 3.6 Flash...")
+        res = call_gemini(system_instruction, user_prompt)
         if res:
             return res
-        log.warning("DeepSeek call failed or empty, falling back to Gemini Flash...")
-    return call_gemini(system_instruction, user_prompt)
+        log.warning("Gemini failed during peak, falling back to DeepSeek...")
+        return call_deepseek(system_instruction, user_prompt)
+    else:
+        log.info(f"🌙 Off-Peak Hour ({peak_status}): Prioritizing DeepSeek-V3 (50% cheaper)...")
+        if DEEPSEEK_API_KEY:
+            res = call_deepseek(system_instruction, user_prompt)
+            if res:
+                return res
+            log.warning("DeepSeek failed during off-peak, falling back to Gemini Flash...")
+        return call_gemini(system_instruction, user_prompt)
 
 # =============================================================================
 # THREADS API CLIENT
@@ -544,6 +583,9 @@ def render_dashboard():
     host_url = request.host_url.rstrip("/")
     webhook_url = f"{host_url}/api/webhook"
 
+    is_peak, peak_desc = is_deepseek_peak_hour()
+    active_engine = "Gemini 3.6 Flash (Peak Protection)" if is_peak else "DeepSeek-V3 (Off-Peak 50% Diskon)"
+
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -568,7 +610,7 @@ def render_dashboard():
         <div class="card">
             <span class="badge">● VERCEL SERVERLESS ONLINE</span>
             <h1>StudyP4L Meta Threads Bot</h1>
-            <p class="meta">Serverless Runtime | Model: <strong>DeepSeek-V3</strong> <small style="color:#94a3b8;">(Fallback: Gemini 3.6 Flash)</small></p>
+            <p class="meta">Engine Aktif: <strong>{active_engine}</strong><br><small style="color:#94a3b8;">Jadwal: {peak_desc}</small></p>
             <hr>
             <p><strong>Target Akun:</strong> <a style="color: #38bdf8;" href="https://www.threads.net/@studyp4l" target="_blank">@studyp4l</a></p>
             <p><strong>Penyimpanan Histori:</strong> <a style="color: #38bdf8;" href="https://github.com/{GITHUB_REPO}" target="_blank">GitHub ({GITHUB_REPO})</a></p>

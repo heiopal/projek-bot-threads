@@ -27,10 +27,12 @@ except Exception:
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", os.getenv("GOOGLE_API_KEY", ""))
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 THREADS_ACCESS_TOKEN = os.getenv("THREADS_ACCESS_TOKEN", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "heiopal/projek-bot-threads")
 GEMINI_MODEL = "gemini-3.6-flash"
+DEEPSEEK_MODEL = "deepseek-chat"
 PORT = int(os.getenv("PORT", 7860))
 
 START_TIME = datetime.now()
@@ -98,9 +100,40 @@ def save_history(topic, pillar, caption, permalink=""):
         return False
 
 # =============================================================================
-# GEMINI AI GENERATION
+# AI GENERATION (DEEPSEEK PRIMARY, GEMINI FALLBACK)
 # =============================================================================
+def call_deepseek(system_instruction, user_prompt):
+    if not DEEPSEEK_API_KEY:
+        return None
+    url = "https://api.deepseek.com/chat/completions"
+    payload = {
+        "model": DEEPSEEK_MODEL,
+        "messages": [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_prompt}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 1000
+    }
+    data = json.dumps(payload).encode("utf-8")
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            res_json = json.loads(resp.read().decode("utf-8"))
+            choices = res_json.get("choices", [])
+            if choices:
+                return choices[0].get("message", {}).get("content", "").strip()
+    except Exception as e:
+        log.error(f"DeepSeek call error: {e}")
+    return None
+
 def call_gemini(system_instruction, user_prompt):
+    if not GEMINI_API_KEY:
+        return None
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
     payload = {
         "system_instruction": {
@@ -127,6 +160,16 @@ def call_gemini(system_instruction, user_prompt):
     except Exception as e:
         log.error(f"Gemini call error: {e}")
     return None
+
+def call_ai(system_instruction, user_prompt):
+    """Unified AI caller: Tries DeepSeek first; falls back to Gemini if failed or unconfigured."""
+    if DEEPSEEK_API_KEY:
+        log.info("Generating content using DeepSeek (deepseek-chat)...")
+        res = call_deepseek(system_instruction, user_prompt)
+        if res:
+            return res
+        log.warning("DeepSeek call failed or empty, falling back to Gemini Flash...")
+    return call_gemini(system_instruction, user_prompt)
 
 # =============================================================================
 # THREADS API CLIENT
@@ -250,7 +293,7 @@ def handle_user_message(chat_id, user_text, message_id, user_name):
         user_prompt = f"Topik bahasan: {topic}\nPilihan sudut pandang / angle yang diminta: {chosen_angle}\n\nBuatkan 1 draft caption Threads terbaik!"
 
         send_telegram_message(chat_id, "⏳ Sedang meracik draft konten dengan gaya @studyp4l...", message_id)
-        draft = call_gemini(system_prompt, user_prompt)
+        draft = call_ai(system_prompt, user_prompt)
 
         if not draft:
             send_telegram_message(chat_id, "Maaf ada kendala saat menyusun draft, coba ulangi ya.", message_id)
@@ -296,7 +339,7 @@ def handle_user_message(chat_id, user_text, message_id, user_name):
     user_prompt = f"{recent_summary}User ingin membahas: {clean_text}\n\nBerikan 3 pilihan angle brainstorming!"
 
     send_telegram_message(chat_id, "🔍 Memeriksa histori GitHub & merancang 3 sudut pandang...", message_id)
-    angles_response = call_gemini(system_prompt, user_prompt)
+    angles_response = call_ai(system_prompt, user_prompt)
 
     if not angles_response:
         send_telegram_message(chat_id, "Gagal merancang ide, coba topik lain ya.", message_id)

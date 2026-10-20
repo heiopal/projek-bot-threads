@@ -27,10 +27,12 @@ except Exception:
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", os.getenv("GOOGLE_API_KEY", ""))
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 THREADS_ACCESS_TOKEN = os.getenv("THREADS_ACCESS_TOKEN", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "heiopal/projek-bot-threads")
 GEMINI_MODEL = "gemini-3.6-flash"
+DEEPSEEK_MODEL = "deepseek-chat"
 
 START_TIME = datetime.now()
 
@@ -151,9 +153,40 @@ def set_session(chat_id, session_data):
             log.warning(f"Session sync to GitHub: {e}")
 
 # =============================================================================
-# GEMINI AI GENERATION
+# AI GENERATION (DEEPSEEK PRIMARY, GEMINI FALLBACK)
 # =============================================================================
+def call_deepseek(system_instruction, user_prompt):
+    if not DEEPSEEK_API_KEY:
+        return None
+    url = "https://api.deepseek.com/chat/completions"
+    payload = {
+        "model": DEEPSEEK_MODEL,
+        "messages": [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_prompt}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 1000
+    }
+    data = json.dumps(payload).encode("utf-8")
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            res_json = json.loads(resp.read().decode("utf-8"))
+            choices = res_json.get("choices", [])
+            if choices:
+                return choices[0].get("message", {}).get("content", "").strip()
+    except Exception as e:
+        log.error(f"DeepSeek call error: {e}")
+    return None
+
 def call_gemini(system_instruction, user_prompt):
+    if not GEMINI_API_KEY:
+        return None
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
     payload = {
         "system_instruction": {
@@ -180,6 +213,16 @@ def call_gemini(system_instruction, user_prompt):
     except Exception as e:
         log.error(f"Gemini call error: {e}")
     return None
+
+def call_ai(system_instruction, user_prompt):
+    """Unified AI caller: Tries DeepSeek first; falls back to Gemini if failed or unconfigured."""
+    if DEEPSEEK_API_KEY:
+        log.info("Generating content using DeepSeek (deepseek-chat)...")
+        res = call_deepseek(system_instruction, user_prompt)
+        if res:
+            return res
+        log.warning("DeepSeek call failed or empty, falling back to Gemini Flash...")
+    return call_gemini(system_instruction, user_prompt)
 
 # =============================================================================
 # THREADS API CLIENT
@@ -293,7 +336,7 @@ def generate_draft(chat_id, topic, chosen_angle, message_id=None):
     )
     user_prompt = f"Topik bahasan: {topic}\nPilihan sudut pandang / angle yang diminta: {chosen_angle}\n\nBuatkan 1 draft caption Threads terbaik!"
 
-    draft = call_gemini(system_prompt, user_prompt)
+    draft = call_ai(system_prompt, user_prompt)
     if not draft:
         send_telegram_message(chat_id, "Maaf ada kendala saat menyusun draft, coba ulangi ya.", message_id)
         return
@@ -408,7 +451,7 @@ def handle_user_message(chat_id, user_text, message_id, user_name, reply_to_text
     )
     user_prompt = f"{recent_summary}User ingin membahas: {topic_query}\n\nBerikan 3 pilihan angle brainstorming!"
 
-    angles_response = call_gemini(system_prompt, user_prompt)
+    angles_response = call_ai(system_prompt, user_prompt)
     if not angles_response:
         send_telegram_message(chat_id, "Gagal merancang ide, coba topik lain ya.", message_id)
         return
@@ -525,7 +568,7 @@ def render_dashboard():
         <div class="card">
             <span class="badge">● VERCEL SERVERLESS ONLINE</span>
             <h1>StudyP4L Meta Threads Bot</h1>
-            <p class="meta">Serverless Runtime | Model: <strong>{GEMINI_MODEL}</strong></p>
+            <p class="meta">Serverless Runtime | Model: <strong>DeepSeek-V3</strong> <small style="color:#94a3b8;">(Fallback: Gemini 3.6 Flash)</small></p>
             <hr>
             <p><strong>Target Akun:</strong> <a style="color: #38bdf8;" href="https://www.threads.net/@studyp4l" target="_blank">@studyp4l</a></p>
             <p><strong>Penyimpanan Histori:</strong> <a style="color: #38bdf8;" href="https://github.com/{GITHUB_REPO}" target="_blank">GitHub ({GITHUB_REPO})</a></p>
